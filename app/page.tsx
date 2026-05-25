@@ -15,15 +15,39 @@ import {
   calcularGrupo,
   calcularResultadoSugerido,
   RESULTADOS_CLASIFICACION,
-  COLORES_RESULTADO,
   type RespuestasClasificador,
   type RespuestaClasificacion,
   type ResultadoKey,
 } from "@/lib/clasificador";
 
-// ─── Pasos del wizard ────────────────────────────────────────────────────────
+// ─── Tipos de delito ──────────────────────────────────────────────────────────
 
-const PASOS = [
+const TIPOS_DELITO = [
+  "Robo", "Robo agravado", "Hurto", "Lesiones leves", "Lesiones graves",
+  "Lesiones gravísimas", "Amenazas", "Daño", "Resistencia a la autoridad",
+  "Encubrimiento", "Tenencia de estupefacientes", "Comercialización de estupefacientes",
+  "Violación de domicilio", "Abuso sexual", "Violencia familiar",
+  "Homicidio en grado de tentativa", "Homicidio", "Portación ilegal de arma", "Otro",
+] as const;
+
+interface DatosCaso {
+  numeroActa: string;
+  apellidoNombre: string;
+  dni: string;
+  tipoDelito: string;
+  fechaHecho: string;
+  descripcion: string;
+  fiscalAsignado: string;
+}
+
+const DATOS_VACIOS: DatosCaso = {
+  numeroActa: "", apellidoNombre: "", dni: "",
+  tipoDelito: "", fechaHecho: "", descripcion: "", fiscalAsignado: "",
+};
+
+// ─── Pasos del clasificador ───────────────────────────────────────────────────
+
+const PASOS_CLASIFICACION = [
   {
     id: "momento1",
     titulo: "Verificación inicial",
@@ -49,15 +73,8 @@ const PASOS = [
     id: "rdap",
     titulo: "Criterios de oportunidad (RDAP)",
     subtitulo: "Salidas alternativas al juicio",
-    preguntas: [
-      ...COMPOSICIONAL,
-      ...PENA_NATURAL,
-      ...ENFERMEDAD_TERMINAL,
-      ...INSIGNIFICANCIA,
-      ...PARTICIPACION_MENOR,
-      ...PENA_MENOR,
-      ...SPAP,
-    ],
+    preguntas: [...COMPOSICIONAL, ...PENA_NATURAL, ...ENFERMEDAD_TERMINAL,
+                ...INSIGNIFICANCIA, ...PARTICIPACION_MENOR, ...PENA_MENOR, ...SPAP],
     ayuda: null,
   },
 ] as const;
@@ -80,105 +97,280 @@ const EXPLICACION_RESULTADO: Record<ResultadoKey, string> = {
   RESULTADO_6: "El caso no reúne condiciones para ninguna salida alternativa. Continúa hacia elevación a juicio oral.",
 };
 
+// ─── Header compartido ────────────────────────────────────────────────────────
+
+function Header() {
+  return (
+    <header className="bg-blue-900 text-white px-6 py-4">
+      <div className="max-w-2xl mx-auto">
+        <p className="text-blue-300 text-xs font-medium uppercase tracking-wider mb-1">
+          Ministerio Público Fiscal · Córdoba
+        </p>
+        <h1 className="text-xl font-bold">Clasificador de Casos</h1>
+      </div>
+    </header>
+  );
+}
+
 // ─── Componente principal ─────────────────────────────────────────────────────
 
 export default function ClasificadorPage() {
+  const [etapa, setEtapa] = useState<"datos" | "clasificacion" | "resultado">("datos");
+  const [datos, setDatos] = useState<DatosCaso>(DATOS_VACIOS);
   const [pasoActual, setPasoActual] = useState(0);
   const [respuestas, setRespuestas] = useState<RespuestasClasificador>({});
   const [resultado, setResultado] = useState<ResultadoKey | null>(null);
-  const [mostrarResultado, setMostrarResultado] = useState(false);
 
   function responder(id: string, valor: RespuestaClasificacion) {
     setRespuestas((prev) => ({ ...prev, [id]: valor }));
   }
 
-  function avanzar() {
-    // Verificar si hay un corte anticipado después del paso actual
+  function avanzarClasificacion() {
     if (pasoActual === 0) {
       const grupo = calcularGrupo(respuestas);
-      if (grupo === "0") {
-        const r = calcularResultadoSugerido(respuestas);
-        setResultado(r);
-        setMostrarResultado(true);
-        return;
-      }
+      if (grupo === "0") { setResultado(calcularResultadoSugerido(respuestas)); setEtapa("resultado"); return; }
     }
     if (pasoActual === 1) {
       const grupo = calcularGrupo(respuestas);
-      if (grupo === "3") {
-        const r = calcularResultadoSugerido(respuestas);
-        setResultado(r);
-        setMostrarResultado(true);
-        return;
-      }
+      if (grupo === "3") { setResultado(calcularResultadoSugerido(respuestas)); setEtapa("resultado"); return; }
     }
-    if (pasoActual < PASOS.length - 1) {
+    if (pasoActual < PASOS_CLASIFICACION.length - 1) {
       setPasoActual((p) => p + 1);
     } else {
-      const r = calcularResultadoSugerido(respuestas);
-      setResultado(r);
-      setMostrarResultado(true);
+      setResultado(calcularResultadoSugerido(respuestas));
+      setEtapa("resultado");
     }
   }
 
   function reiniciar() {
+    setEtapa("datos");
+    setDatos(DATOS_VACIOS);
     setPasoActual(0);
     setRespuestas({});
     setResultado(null);
-    setMostrarResultado(false);
   }
 
-  const paso = PASOS[pasoActual];
-  const preguntasActuales = paso.preguntas as readonly { id: string; texto: string; ayuda?: string }[];
-  const todasRespondidas = preguntasActuales.every(
-    (p) => respuestas[p.id] === "SI" || respuestas[p.id] === "NO"
-  );
-  const progreso = Math.round(((pasoActual) / PASOS.length) * 100);
+  // ── ETAPA 1: Datos del caso ────────────────────────────────────────────────
 
-  // ── Vista resultado ──────────────────────────────────────────────────────────
-  if (mostrarResultado && resultado) {
-    const info = RESULTADOS_CLASIFICACION.find((r) => r.value === resultado);
+  if (etapa === "datos") {
+    const camposObligatorios = datos.apellidoNombre.trim() && datos.tipoDelito && datos.numeroActa.trim();
     return (
       <div className="min-h-screen bg-gray-50">
-        <header className="bg-blue-900 text-white px-6 py-4">
-          <div className="max-w-2xl mx-auto">
-            <p className="text-blue-300 text-xs font-medium uppercase tracking-wider mb-1">
-              Ministerio Público Fiscal · Córdoba
-            </p>
-            <h1 className="text-xl font-bold">Clasificador de Casos</h1>
+        <Header />
+        <div className="bg-blue-800 h-1.5">
+          <div className="bg-blue-300 h-full w-0" />
+        </div>
+        <main className="max-w-2xl mx-auto px-6 py-8">
+          <div className="flex items-center gap-2 mb-6">
+            {["datos", ...PASOS_CLASIFICACION.map((_, i) => i)].map((_, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                  i === 0 ? "bg-blue-900 text-white" : "bg-gray-200 text-gray-400"
+                }`}>
+                  {i + 1}
+                </div>
+                {i < PASOS_CLASIFICACION.length && (
+                  <div className="h-0.5 w-8 bg-gray-200" />
+                )}
+              </div>
+            ))}
           </div>
-        </header>
 
-        <main className="max-w-2xl mx-auto px-6 py-10">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="bg-blue-50 border-b border-blue-100 px-6 py-4">
+              <h2 className="font-bold text-blue-900 text-lg">Datos del caso</h2>
+              <p className="text-sm text-blue-700 mt-0.5">Identificación del caso a clasificar</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Fila: Acta + Fecha */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    N° de acta <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={datos.numeroActa}
+                    onChange={(e) => setDatos((d) => ({ ...d, numeroActa: e.target.value }))}
+                    placeholder="Ej: 0142/26"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Fecha del hecho
+                  </label>
+                  <input
+                    type="date"
+                    value={datos.fechaHecho}
+                    onChange={(e) => setDatos((d) => ({ ...d, fechaHecho: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Apellido y nombre */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Apellido y nombre del imputado <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={datos.apellidoNombre}
+                  onChange={(e) => setDatos((d) => ({ ...d, apellidoNombre: e.target.value }))}
+                  placeholder="Ej: García, Juan Carlos"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* DNI */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  DNI
+                </label>
+                <input
+                  type="text"
+                  value={datos.dni}
+                  onChange={(e) => setDatos((d) => ({ ...d, dni: e.target.value }))}
+                  placeholder="Ej: 38.542.190"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Tipo de delito */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Tipo de delito <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={datos.tipoDelito}
+                  onChange={(e) => setDatos((d) => ({ ...d, tipoDelito: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">— Seleccionar —</option>
+                  {TIPOS_DELITO.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Fiscal asignado */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Fiscal asignado
+                </label>
+                <input
+                  type="text"
+                  value={datos.fiscalAsignado}
+                  onChange={(e) => setDatos((d) => ({ ...d, fiscalAsignado: e.target.value }))}
+                  placeholder="Ej: Dr. Sebastián Torres"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Descripción */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Descripción del hecho
+                </label>
+                <textarea
+                  value={datos.descripcion}
+                  onChange={(e) => setDatos((d) => ({ ...d, descripcion: e.target.value }))}
+                  rows={3}
+                  placeholder="Breve relato del hecho…"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setEtapa("clasificacion")}
+                disabled={!camposObligatorios}
+                className="bg-blue-900 text-white font-semibold text-sm px-6 py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-40 transition-colors"
+              >
+                Iniciar clasificación →
+              </button>
+            </div>
+          </div>
+
+          <p className="text-center text-xs text-gray-400 mt-4">
+            Los campos con <span className="text-red-500">*</span> son obligatorios
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  // ── ETAPA 3: Resultado ────────────────────────────────────────────────────
+
+  if (etapa === "resultado" && resultado) {
+    const info = RESULTADOS_CLASIFICACION.find((r) => r.value === resultado);
+    const fechaFormateada = datos.fechaHecho
+      ? new Date(datos.fechaHecho + "T12:00:00").toLocaleDateString("es-AR")
+      : null;
+
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <main className="max-w-2xl mx-auto px-6 py-10 print:py-4">
+
+          {/* Ficha del caso */}
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6 print:shadow-none print:border">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Caso clasificado</h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+              <div>
+                <span className="text-gray-400 text-xs">Imputado</span>
+                <p className="font-semibold text-gray-900">{datos.apellidoNombre}</p>
+              </div>
+              {datos.dni && (
+                <div>
+                  <span className="text-gray-400 text-xs">DNI</span>
+                  <p className="font-semibold text-gray-900">{datos.dni}</p>
+                </div>
+              )}
+              <div>
+                <span className="text-gray-400 text-xs">Acta</span>
+                <p className="font-semibold text-gray-900">{datos.numeroActa}</p>
+              </div>
+              {fechaFormateada && (
+                <div>
+                  <span className="text-gray-400 text-xs">Fecha del hecho</span>
+                  <p className="font-semibold text-gray-900">{fechaFormateada}</p>
+                </div>
+              )}
+              <div>
+                <span className="text-gray-400 text-xs">Tipo de delito</span>
+                <p className="font-semibold text-gray-900">{datos.tipoDelito}</p>
+              </div>
+              {datos.fiscalAsignado && (
+                <div>
+                  <span className="text-gray-400 text-xs">Fiscal</span>
+                  <p className="font-semibold text-gray-900">{datos.fiscalAsignado}</p>
+                </div>
+              )}
+            </div>
+            {datos.descripcion && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <span className="text-gray-400 text-xs">Descripción</span>
+                <p className="text-sm text-gray-700 mt-0.5">{datos.descripcion}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Resultado */}
           <div className={`rounded-2xl border-2 p-8 ${COLORES_BADGE[resultado]}`}>
             <p className="text-xs font-semibold uppercase tracking-widest mb-2 opacity-70">
               Resultado sugerido
             </p>
             <h2 className="text-2xl font-bold mb-4">{info?.label}</h2>
-            <p className="text-base leading-relaxed">
-              {EXPLICACION_RESULTADO[resultado]}
-            </p>
+            <p className="text-base leading-relaxed">{EXPLICACION_RESULTADO[resultado]}</p>
           </div>
 
-          <div className="mt-8 bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-            <h3 className="font-semibold text-gray-700 mb-4 text-sm uppercase tracking-wide">
-              Resumen de respuestas
-            </h3>
-            <div className="space-y-1">
-              {Object.entries(respuestas).map(([id, val]) => (
-                <div key={id} className="flex items-center gap-3 text-sm py-1 border-b border-gray-50 last:border-0">
-                  <span className={`w-8 text-center font-bold rounded px-1 ${val === "SI" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-500"}`}>
-                    {val}
-                  </span>
-                  <span className="text-gray-600">{id}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-col sm:flex-row gap-3">
+          <div className="mt-6 flex flex-col sm:flex-row gap-3 print:hidden">
             <button
-              onClick={() => setMostrarResultado(false)}
+              onClick={() => setEtapa("clasificacion")}
               className="flex-1 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-xl hover:bg-gray-50 transition-colors"
             >
               ← Corregir respuestas
@@ -196,49 +388,56 @@ export default function ClasificadorPage() {
               🖨 Imprimir
             </button>
           </div>
+
+          <p className="text-center text-xs text-gray-400 mt-6 print:hidden">
+            Herramienta de apoyo — no reemplaza el criterio del fiscal
+          </p>
         </main>
       </div>
     );
   }
 
-  // ── Vista cuestionario ────────────────────────────────────────────────────────
+  // ── ETAPA 2: Cuestionario ─────────────────────────────────────────────────
+
+  const paso = PASOS_CLASIFICACION[pasoActual];
+  const preguntasActuales = paso.preguntas as readonly { id: string; texto: string; ayuda?: string }[];
+  const todasRespondidas = preguntasActuales.every(
+    (p) => respuestas[p.id] === "SI" || respuestas[p.id] === "NO"
+  );
+  const progreso = Math.round(((pasoActual + 1) / (PASOS_CLASIFICACION.length + 1)) * 100);
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-blue-900 text-white px-6 py-4">
-        <div className="max-w-2xl mx-auto">
-          <p className="text-blue-300 text-xs font-medium uppercase tracking-wider mb-1">
-            Ministerio Público Fiscal · Córdoba
-          </p>
-          <h1 className="text-xl font-bold">Clasificador de Casos</h1>
-        </div>
-      </header>
-
-      {/* Barra de progreso */}
+      <Header />
       <div className="bg-blue-800 h-1.5">
-        <div
-          className="bg-blue-300 h-full transition-all duration-500"
-          style={{ width: `${progreso}%` }}
-        />
+        <div className="bg-blue-300 h-full transition-all duration-500" style={{ width: `${progreso}%` }} />
       </div>
 
       <main className="max-w-2xl mx-auto px-6 py-8">
-        {/* Indicador de paso */}
+        {/* Chip del caso */}
+        <div className="mb-5 flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm">
+          <span className="text-gray-400 text-xs">📋</span>
+          <span className="text-sm font-semibold text-gray-800 truncate">{datos.apellidoNombre}</span>
+          <span className="text-gray-300">·</span>
+          <span className="text-xs text-gray-500">{datos.tipoDelito}</span>
+          <span className="text-gray-300">·</span>
+          <span className="text-xs text-gray-400">Acta {datos.numeroActa}</span>
+        </div>
+
+        {/* Indicador de pasos */}
         <div className="flex items-center gap-2 mb-6">
-          {PASOS.map((p, i) => (
-            <div key={p.id} className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                  i < pasoActual
-                    ? "bg-blue-600 text-white"
-                    : i === pasoActual
-                    ? "bg-blue-900 text-white"
-                    : "bg-gray-200 text-gray-400"
-                }`}
-              >
-                {i < pasoActual ? "✓" : i + 1}
+          {[0, ...PASOS_CLASIFICACION.map((_, i) => i + 1)].map((_, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+                i === 0 ? "bg-blue-600 text-white"
+                : i - 1 < pasoActual ? "bg-blue-600 text-white"
+                : i - 1 === pasoActual ? "bg-blue-900 text-white"
+                : "bg-gray-200 text-gray-400"
+              }`}>
+                {i === 0 ? "✓" : i - 1 < pasoActual ? "✓" : i}
               </div>
-              {i < PASOS.length - 1 && (
-                <div className={`h-0.5 w-8 ${i < pasoActual ? "bg-blue-600" : "bg-gray-200"}`} />
+              {i < PASOS_CLASIFICACION.length && (
+                <div className={`h-0.5 w-8 ${i < pasoActual + 1 ? "bg-blue-600" : "bg-gray-200"}`} />
               )}
             </div>
           ))}
@@ -261,9 +460,7 @@ export default function ClasificadorPage() {
               const val = respuestas[pregunta.id];
               return (
                 <div key={pregunta.id} className="px-6 py-4">
-                  <p className="text-sm font-medium text-gray-800 mb-1">
-                    {pregunta.texto}
-                  </p>
+                  <p className="text-sm font-medium text-gray-800 mb-1">{pregunta.texto}</p>
                   {pregunta.ayuda && (
                     <p className="text-xs text-gray-400 mb-3">{pregunta.ayuda}</p>
                   )}
@@ -291,24 +488,23 @@ export default function ClasificadorPage() {
 
           <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
             <button
-              onClick={() => pasoActual > 0 && setPasoActual((p) => p - 1)}
-              disabled={pasoActual === 0}
-              className="text-sm text-gray-400 hover:text-gray-600 disabled:opacity-30 transition-colors px-3 py-2"
+              onClick={() => pasoActual > 0 ? setPasoActual((p) => p - 1) : setEtapa("datos")}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors px-3 py-2"
             >
               ← Anterior
             </button>
             <button
-              onClick={avanzar}
+              onClick={avanzarClasificacion}
               disabled={!todasRespondidas}
               className="bg-blue-900 text-white font-semibold text-sm px-6 py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-40 transition-colors"
             >
-              {pasoActual === PASOS.length - 1 ? "Ver resultado →" : "Siguiente →"}
+              {pasoActual === PASOS_CLASIFICACION.length - 1 ? "Ver resultado →" : "Siguiente →"}
             </button>
           </div>
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Paso {pasoActual + 1} de {PASOS.length} · Herramienta de apoyo — no reemplaza el criterio del fiscal
+          Paso {pasoActual + 2} de {PASOS_CLASIFICACION.length + 1} · Herramienta de apoyo — no reemplaza el criterio del fiscal
         </p>
       </main>
     </div>
