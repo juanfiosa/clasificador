@@ -22,7 +22,10 @@ import {
 
 // ─── Tipos de delito ──────────────────────────────────────────────────────────
 
+const SIN_FIGURA = "Sin figura típica aparente";
+
 const TIPOS_DELITO = [
+  SIN_FIGURA,
   "Robo", "Robo agravado", "Hurto", "Lesiones leves", "Lesiones graves",
   "Lesiones gravísimas", "Amenazas", "Daño", "Resistencia a la autoridad",
   "Encubrimiento", "Tenencia de estupefacientes", "Comercialización de estupefacientes",
@@ -37,12 +40,11 @@ interface DatosCaso {
   tipoDelito: string;
   fechaHecho: string;
   descripcion: string;
-  fiscalAsignado: string;
 }
 
 const DATOS_VACIOS: DatosCaso = {
   numeroActa: "", apellidoNombre: "", dni: "",
-  tipoDelito: "", fechaHecho: "", descripcion: "", fiscalAsignado: "",
+  tipoDelito: "", fechaHecho: "", descripcion: "",
 };
 
 // ─── Pasos del clasificador ───────────────────────────────────────────────────
@@ -255,20 +257,6 @@ export default function ClasificadorPage() {
                 </select>
               </div>
 
-              {/* Fiscal asignado */}
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
-                  Fiscal asignado
-                </label>
-                <input
-                  type="text"
-                  value={datos.fiscalAsignado}
-                  onChange={(e) => setDatos((d) => ({ ...d, fiscalAsignado: e.target.value }))}
-                  placeholder="Ej: Dr. Sebastián Torres"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
               {/* Descripción */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">
@@ -286,7 +274,17 @@ export default function ClasificadorPage() {
 
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
               <button
-                onClick={() => setEtapa("clasificacion")}
+                onClick={() => {
+                  if (datos.tipoDelito === SIN_FIGURA) {
+                    // Pre-responder M1_1=SI y mostrar resultado directamente
+                    const respuestasPrevias = { M1_1: "SI" as const };
+                    setRespuestas(respuestasPrevias);
+                    setResultado(calcularResultadoSugerido(respuestasPrevias));
+                    setEtapa("resultado");
+                  } else {
+                    setEtapa("clasificacion");
+                  }
+                }}
                 disabled={!camposObligatorios}
                 className="bg-blue-900 text-white font-semibold text-sm px-6 py-2.5 rounded-xl hover:bg-blue-800 disabled:opacity-40 transition-colors"
               >
@@ -344,12 +342,6 @@ export default function ClasificadorPage() {
                 <span className="text-gray-400 text-xs">Tipo de delito</span>
                 <p className="font-semibold text-gray-900">{datos.tipoDelito}</p>
               </div>
-              {datos.fiscalAsignado && (
-                <div>
-                  <span className="text-gray-400 text-xs">Fiscal</span>
-                  <p className="font-semibold text-gray-900">{datos.fiscalAsignado}</p>
-                </div>
-              )}
             </div>
             {datos.descripcion && (
               <div className="mt-3 pt-3 border-t border-gray-100">
