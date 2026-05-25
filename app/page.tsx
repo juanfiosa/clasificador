@@ -178,6 +178,12 @@ export default function ClasificadorPage() {
 
           <div className="mt-6 flex flex-col sm:flex-row gap-3">
             <button
+              onClick={() => setMostrarResultado(false)}
+              className="flex-1 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-xl hover:bg-gray-50 transition-colors"
+            >
+              ← Corregir respuestas
+            </button>
+            <button
               onClick={reiniciar}
               className="flex-1 bg-blue-900 text-white font-semibold py-3 px-6 rounded-xl hover:bg-blue-800 transition-colors"
             >
@@ -187,7 +193,7 @@ export default function ClasificadorPage() {
               onClick={() => window.print()}
               className="flex-1 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-xl hover:bg-gray-50 transition-colors"
             >
-              🖨 Imprimir resultado
+              🖨 Imprimir
             </button>
           </div>
         </main>
