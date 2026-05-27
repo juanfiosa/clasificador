@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   MOMENTO1,
   MOMENTO2,
@@ -122,6 +122,30 @@ export default function ClasificadorPage() {
   const [pasoActual, setPasoActual] = useState(0);
   const [respuestas, setRespuestas] = useState<RespuestasClasificador>({});
   const [resultado, setResultado] = useState<ResultadoKey | null>(null);
+  const [errorImport, setErrorImport] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function importarJSON(file: File) {
+    setErrorImport(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const obj = JSON.parse(e.target?.result as string);
+        if (!obj.apellidoNombre && !obj.numeroActa) throw new Error("Formato inválido");
+        setDatos({
+          numeroActa:    obj.numeroActa    ?? "",
+          apellidoNombre: obj.apellidoNombre ?? "",
+          dni:           obj.dni           ?? "",
+          tipoDelito:    obj.tipoDelito    ?? "",
+          fechaHecho:    obj.fechaHecho    ?? "",
+          descripcion:   obj.descripcion   ?? "",
+        });
+      } catch {
+        setErrorImport("El archivo no tiene el formato esperado.");
+      }
+    };
+    reader.readAsText(file);
+  }
 
   function responder(id: string, valor: RespuestaClasificacion) {
     setRespuestas((prev) => ({ ...prev, [id]: valor }));
@@ -179,10 +203,37 @@ export default function ClasificadorPage() {
           </div>
 
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="bg-blue-50 border-b border-blue-100 px-6 py-4">
-              <h2 className="font-bold text-blue-900 text-lg">Datos del caso</h2>
-              <p className="text-sm text-blue-700 mt-0.5">Identificación del caso a clasificar</p>
+            <div className="bg-blue-50 border-b border-blue-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-blue-900 text-lg">Datos del caso</h2>
+                <p className="text-sm text-blue-700 mt-0.5">Identificación del caso a clasificar</p>
+              </div>
+              <div>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) importarJSON(f);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  onClick={() => inputRef.current?.click()}
+                  className="text-xs bg-white border border-blue-300 text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors font-medium"
+                  title="Cargar datos desde archivo JSON"
+                >
+                  ↑ Cargar JSON
+                </button>
+              </div>
             </div>
+            {errorImport && (
+              <div className="px-6 py-2 bg-red-50 border-b border-red-100 text-xs text-red-600">
+                ✕ {errorImport}
+              </div>
+            )}
 
             <div className="p-6 space-y-4">
               {/* Fila: Acta + Fecha */}
