@@ -20,6 +20,32 @@ import {
   type ResultadoKey,
 } from "@/lib/clasificador";
 
+// ─── Árbol de dependencias del RDAP ──────────────────────────────────────────
+// Si la pregunta padre no tiene el valor requerido, la hija no se muestra.
+
+const DEPENDENCIAS: Record<string, { padre: string; valorRequerido: RespuestaClasificacion }> = {
+  C_2:  { padre: "C_1",  valorRequerido: "SI" },
+  C_3:  { padre: "C_2",  valorRequerido: "SI" },
+  PM_2: { padre: "PM_1", valorRequerido: "SI" },
+  PM_3: { padre: "PM_2", valorRequerido: "SI" },
+  PE_2: { padre: "PE_1", valorRequerido: "SI" },
+};
+
+// Hijos directos e indirectos de cada pregunta (para limpiar al cambiar respuesta)
+const HIJOS: Record<string, string[]> = {
+  C_1:  ["C_2", "C_3"],
+  C_2:  ["C_3"],
+  PM_1: ["PM_2", "PM_3"],
+  PM_2: ["PM_3"],
+  PE_1: ["PE_2"],
+};
+
+function esVisible(id: string, respuestas: RespuestasClasificador): boolean {
+  const dep = DEPENDENCIAS[id];
+  if (!dep) return true;
+  return respuestas[dep.padre] === dep.valorRequerido;
+}
+
 // ─── Tipos de delito ──────────────────────────────────────────────────────────
 
 const SIN_FIGURA = "Sin figura típica aparente";
@@ -148,7 +174,14 @@ export default function ClasificadorPage() {
   }
 
   function responder(id: string, valor: RespuestaClasificacion) {
-    setRespuestas((prev) => ({ ...prev, [id]: valor }));
+    setRespuestas((prev) => {
+      const nuevo = { ...prev, [id]: valor };
+      // Si cambia a NO (o cualquier valor no-SI), limpiar preguntas dependientes
+      if (valor !== "SI" && HIJOS[id]) {
+        HIJOS[id].forEach((hijo) => delete nuevo[hijo]);
+      }
+      return nuevo;
+    });
   }
 
   function avanzarClasificacion() {
@@ -443,7 +476,9 @@ export default function ClasificadorPage() {
   // ── ETAPA 2: Cuestionario ─────────────────────────────────────────────────
 
   const paso = PASOS_CLASIFICACION[pasoActual];
-  const preguntasActuales = paso.preguntas as readonly { id: string; texto: string; ayuda?: string }[];
+  const todasLasPreguntas = paso.preguntas as readonly { id: string; texto: string; ayuda?: string }[];
+  // Solo mostrar preguntas cuyas dependencias estén satisfechas
+  const preguntasActuales = todasLasPreguntas.filter((p) => esVisible(p.id, respuestas));
   const todasRespondidas = preguntasActuales.every(
     (p) => respuestas[p.id] === "SI" || respuestas[p.id] === "NO"
   );
