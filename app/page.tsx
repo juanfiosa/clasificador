@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
+import Link from "next/link";
 import {
   MOMENTO1,
   MOMENTO2,
@@ -66,11 +67,12 @@ interface DatosCaso {
   tipoDelito: string;
   fechaHecho: string;
   descripcion: string;
+  operador: string;
 }
 
 const DATOS_VACIOS: DatosCaso = {
   numeroActa: "", apellidoNombre: "", dni: "",
-  tipoDelito: "", fechaHecho: "", descripcion: "",
+  tipoDelito: "", fechaHecho: "", descripcion: "", operador: "",
 };
 
 // ─── Pasos del clasificador ───────────────────────────────────────────────────
@@ -130,11 +132,19 @@ const EXPLICACION_RESULTADO: Record<ResultadoKey, string> = {
 function Header() {
   return (
     <header className="bg-blue-900 text-white px-6 py-4">
-      <div className="max-w-2xl mx-auto">
-        <p className="text-blue-300 text-xs font-medium uppercase tracking-wider mb-1">
-          Ministerio Público Fiscal · Córdoba
-        </p>
-        <h1 className="text-xl font-bold">Clasificador de Casos</h1>
+      <div className="max-w-2xl mx-auto flex items-center justify-between">
+        <div>
+          <p className="text-blue-300 text-xs font-medium uppercase tracking-wider mb-1">
+            Ministerio Público Fiscal · Córdoba
+          </p>
+          <h1 className="text-xl font-bold">Clasificador de Casos</h1>
+        </div>
+        <Link
+          href="/registros"
+          className="text-xs bg-white/10 hover:bg-white/20 border border-white/20 text-white px-3 py-1.5 rounded-lg transition-colors"
+        >
+          📋 Ver registros
+        </Link>
       </div>
     </header>
   );
@@ -149,7 +159,39 @@ export default function ClasificadorPage() {
   const [respuestas, setRespuestas] = useState<RespuestasClasificador>({});
   const [resultado, setResultado] = useState<ResultadoKey | null>(null);
   const [errorImport, setErrorImport] = useState<string | null>(null);
+  const [guardado, setGuardado] = useState<"idle" | "guardando" | "ok" | "error">("idle");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const guardarRegistro = useCallback(
+    async (res: ResultadoKey, resp: RespuestasClasificador) => {
+      setGuardado("guardando");
+      try {
+        const info = RESULTADOS_CLASIFICACION.find((r) => r.value === res);
+        const grupo = calcularGrupo(resp);
+        await fetch("/api/registros", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            numeroActa:     datos.numeroActa     || null,
+            apellidoNombre: datos.apellidoNombre || null,
+            dni:            datos.dni            || null,
+            tipoDelito:     datos.tipoDelito     || null,
+            fechaHecho:     datos.fechaHecho     || null,
+            descripcion:    datos.descripcion    || null,
+            operador:       datos.operador       || null,
+            respuestas:     resp,
+            grupo:          grupo !== null ? Number(grupo) : null,
+            resultado:      res,
+            resultadoTexto: info?.label ?? null,
+          }),
+        });
+        setGuardado("ok");
+      } catch {
+        setGuardado("error");
+      }
+    },
+    [datos]
+  );
 
   function importarJSON(file: File) {
     setErrorImport(null);
@@ -159,12 +201,13 @@ export default function ClasificadorPage() {
         const obj = JSON.parse(e.target?.result as string);
         if (!obj.apellidoNombre && !obj.numeroActa) throw new Error("Formato inválido");
         setDatos({
-          numeroActa:    obj.numeroActa    ?? "",
+          numeroActa:     obj.numeroActa     ?? "",
           apellidoNombre: obj.apellidoNombre ?? "",
-          dni:           obj.dni           ?? "",
-          tipoDelito:    obj.tipoDelito    ?? "",
-          fechaHecho:    obj.fechaHecho    ?? "",
-          descripcion:   obj.descripcion   ?? "",
+          dni:            obj.dni            ?? "",
+          tipoDelito:     obj.tipoDelito     ?? "",
+          fechaHecho:     obj.fechaHecho     ?? "",
+          descripcion:    obj.descripcion    ?? "",
+          operador:       obj.operador       ?? "",
         });
       } catch {
         setErrorImport("El archivo no tiene el formato esperado.");
@@ -184,20 +227,28 @@ export default function ClasificadorPage() {
     });
   }
 
+  function terminarConResultado(resp: RespuestasClasificador) {
+    const res = calcularResultadoSugerido(resp);
+    setRespuestas(resp);
+    setResultado(res);
+    setGuardado("idle");
+    setEtapa("resultado");
+    if (res) guardarRegistro(res, resp);
+  }
+
   function avanzarClasificacion() {
     if (pasoActual === 0) {
       const grupo = calcularGrupo(respuestas);
-      if (grupo === "0") { setResultado(calcularResultadoSugerido(respuestas)); setEtapa("resultado"); return; }
+      if (grupo === "0") { terminarConResultado(respuestas); return; }
     }
     if (pasoActual === 1) {
       const grupo = calcularGrupo(respuestas);
-      if (grupo === "3") { setResultado(calcularResultadoSugerido(respuestas)); setEtapa("resultado"); return; }
+      if (grupo === "3") { terminarConResultado(respuestas); return; }
     }
     if (pasoActual < PASOS_CLASIFICACION.length - 1) {
       setPasoActual((p) => p + 1);
     } else {
-      setResultado(calcularResultadoSugerido(respuestas));
-      setEtapa("resultado");
+      terminarConResultado(respuestas);
     }
   }
 
@@ -207,6 +258,7 @@ export default function ClasificadorPage() {
     setPasoActual(0);
     setRespuestas({});
     setResultado(null);
+    setGuardado("idle");
   }
 
   // ── ETAPA 1: Datos del caso ────────────────────────────────────────────────
@@ -354,17 +406,28 @@ export default function ClasificadorPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 />
               </div>
+
+              {/* Operador */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                  Funcionario que clasifica
+                </label>
+                <input
+                  type="text"
+                  value={datos.operador}
+                  onChange={(e) => setDatos((d) => ({ ...d, operador: e.target.value }))}
+                  placeholder="Nombre y apellido del funcionario"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
             </div>
 
             <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex justify-end">
               <button
                 onClick={() => {
                   if (datos.tipoDelito === SIN_FIGURA) {
-                    // Pre-responder M1_1=SI y mostrar resultado directamente
-                    const respuestasPrevias = { M1_1: "SI" as const };
-                    setRespuestas(respuestasPrevias);
-                    setResultado(calcularResultadoSugerido(respuestasPrevias));
-                    setEtapa("resultado");
+                    const respPrevias = { M1_1: "SI" as const };
+                    terminarConResultado(respPrevias);
                   } else {
                     setEtapa("clasificacion");
                   }
@@ -444,7 +507,28 @@ export default function ClasificadorPage() {
             <p className="text-base leading-relaxed">{EXPLICACION_RESULTADO[resultado]}</p>
           </div>
 
-          <div className="mt-6 flex flex-col sm:flex-row gap-3 print:hidden">
+          {/* Estado del guardado */}
+          <div className="mt-4 print:hidden">
+            {guardado === "guardando" && (
+              <p className="text-center text-xs text-gray-400">Guardando en el registro…</p>
+            )}
+            {guardado === "ok" && (
+              <p className="text-center text-xs text-green-600">
+                ✓ Clasificación guardada en el registro
+                {" · "}
+                <Link href="/registros" className="underline hover:no-underline">
+                  Ver registro
+                </Link>
+              </p>
+            )}
+            {guardado === "error" && (
+              <p className="text-center text-xs text-red-500">
+                No se pudo guardar. Verificá la conexión con la base de datos.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-col sm:flex-row gap-3 print:hidden">
             <button
               onClick={() => setEtapa("clasificacion")}
               className="flex-1 bg-white border border-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-xl hover:bg-gray-50 transition-colors"

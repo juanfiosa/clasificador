@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Clasificacion {
+  id             Int      @id @default(autoincrement())
+  fechaRegistro  DateTime @default(now())
+
+  // Identificación del caso
+  numeroActa     String?
+  apellidoNombre String?
+  dni            String?
+  tipoDelito     String?
+  fechaHecho     String?
+  descripcion    String?  @db.Text
+
+  // Funcionario que realizó la clasificación
+  operador       String?
+
+  // Respuestas del árbol de decisión (JSON)
+  respuestas     Json?
+
+  // Resultado
+  grupo          Int?
+  resultado      String?
+  resultadoTexto String?
+}
