@@ -70,12 +70,21 @@ function Header() {
           </p>
           <h1 className="text-xl font-bold">Registro de clasificaciones</h1>
         </div>
-        <Link
-          href="/"
-          className="text-sm bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg transition-colors"
-        >
-          ← Clasificar caso
-        </Link>
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/registros/exportar"
+            download
+            className="text-sm bg-green-600 hover:bg-green-500 border border-green-500 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            ↓ Exportar Excel
+          </a>
+          <Link
+            href="/"
+            className="text-sm bg-white/10 hover:bg-white/20 border border-white/20 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            ← Clasificar caso
+          </Link>
+        </div>
       </div>
     </header>
   );
